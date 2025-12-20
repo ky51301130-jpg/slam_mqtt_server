@@ -1,5 +1,10 @@
 # 🖥️ SLAM MQTT Server
 
+![ROS2](https://img.shields.io/badge/ROS2-Jazzy-blue)
+![Python](https://img.shields.io/badge/Python-3.12+-yellow)
+![License](https://img.shields.io/badge/License-MIT-green)
+![Platform](https://img.shields.io/badge/Platform-Ubuntu%2024.04-orange)
+
 Pinky 로봇 시스템의 **서버 측 ROS2 패키지**입니다.  
 MQTT 브릿지, 맵 병합, AI 비전 분석, 모니터링 기능을 제공합니다.
 
@@ -458,10 +463,14 @@ MIT License
 
 - **Server Integration & Monitoring**: 2024
 - **Original SLAM System**: Pinky Project
+- **GitHub**: [@ky51301130-jpg](https://github.com/ky51301130-jpg)
 
 ---
 
 ## 🔗 관련 저장소
 
-- 🤖 [slam_mqtt_project](https://github.com/ky51301130-jpg/slam_mqtt_project) - 로봇 측 코드
+| 저장소 | 설명 | 실행 위치 |
+|--------|------|----------|
+| 🖥️ [slam_mqtt_server](https://github.com/ky51301130-jpg/slam_mqtt_server) | 서버 측 코드 (현재) | PC (192.168.0.3) |
+| 🤖 [slam_mqtt_project](https://github.com/ky51301130-jpg/slam_mqtt_project) | 로봇 측 코드 | Raspberry Pi (192.168.0.5) |
 

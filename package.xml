@@ -7,7 +7,7 @@
     Pinky 로봇 시스템의 서버 측 ROS2 패키지.
     MQTT 브릿지, 맵 병합, AI 비전 분석, 모니터링 기능을 제공합니다.
   </description>
-  <maintainer email="ky51301130@example.com">Pinky Team</maintainer>
+  <maintainer email="ky51301130@gmail.com">ky51301130-jpg</maintainer>
   <license>MIT</license>
 
   <depend>rclpy</depend>
