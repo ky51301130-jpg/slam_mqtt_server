@@ -111,8 +111,22 @@ ros2 launch slam_mqtt_server unified.launch.py rviz:=nav2
 | 기능 | 설명 |
 |------|------|
 | 맵 업로드 서버 | Flask `:5100` - 로봇이 맵 파일 업로드 |
-| 충돌 사진 수신 | 로봇 충돌 시 사진 다운로드 |
+| 충돌 사진 수신 | 로봇 충돌 시 사진 다운로드 → `/home/kim1/save/collision/` 저장 |
 | 네트워크 모니터 | MCU/Robot/PLC 연결 상태 체크 |
+
+#### 📸 충돌 사진 저장 기능
+
+로봇이 SLAM 모드에서 충돌 감지 시:
+1. 로봇이 `collision/photo_ready` MQTT 토픽으로 사진 URL 전송
+2. 서버가 HTTP로 사진 다운로드
+3. `/home/kim1/save/collision/collision_YYYYMMDD_HHMMSS.jpg`로 저장
+4. 최대 100장 유지 (오래된 파일 자동 삭제)
+
+```
+저장 경로: /home/kim1/save/collision/
+파일 형식: collision_20241220_143052.jpg
+용도: YOLO 학습 데이터 / 충돌 원인 분석
+```
 
 ```bash
 # 단독 실행
@@ -123,6 +137,9 @@ curl http://192.168.0.3:5100/health
 
 # 맵 업로드 테스트
 curl -X POST -F "file=@map.pgm" http://192.168.0.3:5100/upload
+
+# 저장된 충돌 사진 확인
+ls -la /home/kim1/save/collision/
 ```
 
 ### 2. `server_mqtt_bridge` - MQTT 브릿지
@@ -207,7 +224,9 @@ ros2 launch slam_mqtt_server unified.launch.py yolo_model:=/path/to/best.pt
 | `/plc/goal` | PLC | `{"x": 1.0, "y": 2.0, "yaw": 0.0}` |
 | `/plc/port_status` | PLC | `{"A": 1, "B": 0}` |
 | `robot/nav_result` | 로봇 | `{"goal": "A", "success": true}` |
-| `collision/photo_ready` | 로봇 | `{"filename": "collision_*.jpg"}` |
+| `collision/photo_ready` | 로봇 | `{"url": "http://192.168.0.5:5000/photos/collision_*.jpg"}` |
+
+> 💡 **충돌 사진 흐름**: 로봇이 `collision/photo_ready` 발행 → 서버가 URL에서 사진 다운로드 → `/home/kim1/save/collision/`에 저장 → YOLO 학습 데이터로 활용
 
 ### 발행 (서버 → 외부)
 
@@ -236,14 +255,37 @@ NET.MCU_IP         # "192.168.0.4"
 NET.PLC_IP         # "192.168.0.155"
 
 # 경로
-Path.RAW_MAP       # "/home/kim1/save/map"
-Path.MERGED_MAP    # "/home/kim1/save/renewed_map"
-Path.COLLISION     # "/home/kim1/save/collision"
+Path.RAW_MAP       # "/home/kim1/save/map"          - SLAM 원본 맵
+Path.MERGED_MAP    # "/home/kim1/save/renewed_map"  - 병합된 Nav2 맵
+Path.COLLISION     # "/home/kim1/save/collision"    - 충돌 사진 (YOLO 학습용)
+Path.AI_DETECTIONS # "/home/kim1/save/ai_detections" - AI 감지 결과 이미지
 
 # 설정
-Setting.CYCLE_COUNT    # 8 (맵 병합 개수)
-Setting.PING_TIMEOUT   # 1.0초
-Setting.MAP_INTERVAL   # 1.0초
+Setting.CYCLE_COUNT      # 8 (맵 병합 개수)
+Setting.MAX_PHOTOS       # 100 (최대 충돌 사진 수)
+Setting.PING_TIMEOUT     # 1.0초
+Setting.MAP_INTERVAL     # 1.0초
+```
+
+### 📁 저장 폴더 구조
+
+```
+/home/kim1/save/
+├── map/                    # SLAM 원본 맵 (8장)
+│   ├── map_20241220_140000.pgm
+│   ├── map_20241220_140000.yaml
+│   └── ...
+├── renewed_map/            # 병합된 Nav2 최종 맵
+│   ├── nav2_final_map_20241220_143000.pgm
+│   └── nav2_final_map_20241220_143000.yaml
+├── collision/              # 🔥 충돌 사진 (YOLO 학습 데이터)
+│   ├── collision_20241220_143052.jpg
+│   ├── collision_20241220_143215.jpg
+│   └── ... (최대 100장, 자동 정리)
+└── ai_detections/          # AI 감지 결과 이미지
+    ├── aruco/              # ArUco 마커 감지
+    ├── obstacles/          # SLAM 모드 장애물
+    └── nav2_obstacles/     # Nav2 모드 장애물
 ```
 
 ### 설정 변경
