@@ -43,6 +43,7 @@ setup(
             'server_mqtt_bridge = slam_mqtt_server.server_mqtt_bridge:main',
             'nav2_map_builder = slam_mqtt_server.nav2_map_builder:main',
             'ai_vision_analyzer = slam_mqtt_server.ai_vision_analyzer:main',
+            'web_rviz_bridge = slam_mqtt_server.web_rviz_bridge:main',
         ],
     },
 )

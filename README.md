@@ -12,6 +12,23 @@ MQTT 브릿지, 맵 병합, AI 비전 분석, 모니터링 기능을 제공합�
 
 ---
 
+## 🙏 Credits & Acknowledgements
+
+이 프로젝트는 **[PinkLab](https://github.com/pinklab-art)**의 **[pinky_pro](https://github.com/pinklab-art/pinky_pro)** 프로젝트를 기반으로 개발되었습니다.
+
+| 원본 프로젝트 | 링크 |
+|--------------|------|
+| 🤖 **pinky_pro** | https://github.com/pinklab-art/pinky_pro |
+| 🏢 **PinkLab** | https://github.com/pinklab-art |
+
+원본 프로젝트의 로봇 제어, SLAM, Nav2 시스템을 기반으로 다음 기능을 확장하였습니다:
+- 서버-로봇 분리 아키텍처 (MQTT 브릿지)
+- ICP 기반 8맵 병합 시스템
+- AI 비전 (ArUco + YOLO) 통합
+- PLC/MCU 연동 및 Grafana 모니터링
+
+---
+
 ## 📋 목차
 
 - [시스템 개요](#-시스템-개요)
@@ -74,6 +91,9 @@ pip3 install paho-mqtt flask ultralytics opencv-python-headless pyyaml requests 
 
 # MQTT 브로커
 sudo apt install mosquitto mosquitto-clients
+
+# CycloneDDS (로봇과 통신용)
+sudo apt install ros-jazzy-rmw-cyclonedds-cpp
 ```
 
 ### 2. 빌드
@@ -87,17 +107,50 @@ source install/setup.bash
 ### 3. 실행
 
 ```bash
-# 전체 시스템 (AI 포함)
+# 기본 실행 (AI + Foxglove 포함)
 ros2 launch slam_mqtt_server unified.launch.py
 
-# AI 없이 (경량 모드)
-ros2 launch slam_mqtt_server unified.launch.py use_ai:=false
+# AI 비활성화 (경량 모드)
+ros2 launch slam_mqtt_server unified.launch.py ai:=false
 
-# RViz 포함 (SLAM 모드)
-ros2 launch slam_mqtt_server unified.launch.py rviz:=slam
+# Foxglove 비활성화
+ros2 launch slam_mqtt_server unified.launch.py foxglove:=false
 
-# RViz 포함 (Nav2 모드)
-ros2 launch slam_mqtt_server unified.launch.py rviz:=nav2
+# 모두 비활성화 (최소 실행)
+ros2 launch slam_mqtt_server unified.launch.py ai:=false foxglove:=false
+```
+
+### 4. 모드 전환
+
+로봇이 `/robot_mode` 토픽으로 모드를 발행하면 서버가 자동 감지합니다:
+
+```bash
+# SLAM 모드 (맵 생성)
+ros2 topic pub /robot_mode std_msgs/msg/String "{data: 'SLAM'}" --once
+
+# Nav2 모드 (네비게이션)
+ros2 topic pub /robot_mode std_msgs/msg/String "{data: 'NAV2'}" --once
+
+# IDLE 모드 (대기)
+ros2 topic pub /robot_mode std_msgs/msg/String "{data: 'IDLE'}" --once
+```
+
+**모드별 동작:**
+
+| 모드 | 설명 |
+|------|------|
+| 🗺️ **SLAM** | 맵 생성 중, 사이클 맵 수신 대기, 충돌 사진 활성화 |
+| 🚗 **NAV2** | 네비게이션 활성화, PLC 명령 대기, ArUco 감지 + 자동 맵 전송 |
+| ⏸️ **IDLE** | 대기 상태 |
+
+### 5. RViz 시각화
+
+```bash
+# SLAM RViz (별도 터미널)
+/home/kim1/ros2_ws/slam_rviz.sh
+
+# Nav2 RViz (별도 터미널)
+/home/kim1/ros2_ws/nav2_rviz.sh
 ```
 
 ---
@@ -111,8 +164,27 @@ ros2 launch slam_mqtt_server unified.launch.py rviz:=nav2
 | 기능 | 설명 |
 |------|------|
 | 맵 업로드 서버 | Flask `:5100` - 로봇이 맵 파일 업로드 |
+| 맵 다운로드 API | `/download/<filename>` - 로봇이 맵 파일 다운로드 |
 | 충돌 사진 수신 | 로봇 충돌 시 사진 다운로드 → `/home/kim1/save/collision/` 저장 |
 | 네트워크 모니터 | MCU/Robot/PLC 연결 상태 체크 |
+
+#### 📡 API 엔드포인트
+
+```bash
+# 헬스 체크
+curl http://192.168.0.3:5100/health
+
+# 맵 업로드
+curl -X POST -F "file=@map.pgm" http://192.168.0.3:5100/upload
+
+# 맵 목록 조회
+curl http://192.168.0.3:5100/list_maps
+
+# 맵 다운로드
+curl -O http://192.168.0.3:5100/download/nav2_final_map_20251217_200630.yaml
+curl -O http://192.168.0.3:5100/download/nav2_final_map_20251217_200630.pgm
+curl -O http://192.168.0.3:5100/download/qr_positions.yaml
+```
 
 #### 📸 충돌 사진 저장 기능
 
@@ -144,7 +216,13 @@ ls -la /home/kim1/save/collision/
 
 ### 2. `server_mqtt_bridge` - MQTT 브릿지
 
-ROS2 토픽과 MQTT 메시지 양방향 변환:
+ROS2 토픽과 MQTT 메시지 양방향 변환 + 모드 자동 감지:
+
+**핵심 기능:**
+- `/robot_mode` 토픽 구독 → SLAM/NAV2/IDLE 모드 자동 전환
+- NAV2 모드 진입 시 자동으로 최신 맵 전송
+- ArUco 마커 감지 시 PLC 포트로 자동 네비게이션
+- RViz 자동 실행 (모드별)
 
 ```
 MQTT → ROS2:
@@ -356,17 +434,17 @@ slam_mqtt_server/
 ├── slam_mqtt_server/
 │   ├── __init__.py
 │   ├── config.py                  # 📌 중앙 설정 파일
-│   ├── unified_server.py          # 통합 서버 노드
-│   ├── server_mqtt_bridge.py      # MQTT 브릿지
-│   ├── nav2_map_builder.py        # 맵 병합 노드
-│   └── ai_vision_analyzer.py      # AI 비전 (선택)
+│   ├── unified_server.py          # 통합 서버 노드 (Flask + 모니터)
+│   ├── server_mqtt_bridge.py      # MQTT 브릿지 + 모드 전환
+│   ├── nav2_map_builder.py        # 맵 병합 노드 (ICP + 과반수 투표)
+│   ├── ai_vision_analyzer.py      # AI 비전 (선택)
+│   └── web_rviz_bridge.py         # Foxglove 모니터링
 ├── launch/
-│   ├── unified.launch.py          # 📌 메인 런치 파일
-│   ├── slam_rviz.launch.py
-│   └── nav2_rviz.launch.py
+│   └── unified.launch.py          # 📌 메인 런치 파일
 ├── rviz/
 │   ├── slam_view.rviz
-│   └── nav2_view.rviz
+│   ├── nav2_view.rviz
+│   └── unified_view.rviz
 ├── docs/
 │   ├── DATA_EXCHANGE_GUIDE.md     # 데이터 교환 가이드
 │   └── ICP_ALGORITHM_GUIDE.md     # ICP 알고리즘 설명
@@ -380,6 +458,16 @@ slam_mqtt_server/
 ├── setup.cfg
 ├── requirements.txt
 └── README.md
+```
+
+### RViz 스크립트
+
+```bash
+# SLAM RViz (ros2_ws 경로에 위치)
+~/ros2_ws/slam_rviz.sh
+
+# Nav2 RViz
+~/ros2_ws/nav2_rviz.sh
 ```
 
 ### 개별 노드 실행 (디버깅)
@@ -503,8 +591,8 @@ MIT License
 
 ## 👥 Contributors
 
-- **Server Integration & Monitoring**: 2024
-- **Original SLAM System**: Pinky Project
+- **Server Integration & Monitoring**: 2024-2025
+- **Original Robot System**: [PinkLab - pinky_pro](https://github.com/pinklab-art/pinky_pro)
 - **GitHub**: [@ky51301130-jpg](https://github.com/ky51301130-jpg)
 
 ---
@@ -515,4 +603,5 @@ MIT License
 |--------|------|----------|
 | 🖥️ [slam_mqtt_server](https://github.com/ky51301130-jpg/slam_mqtt_server) | 서버 측 코드 (현재) | PC (192.168.0.3) |
 | 🤖 [slam_mqtt_project](https://github.com/ky51301130-jpg/slam_mqtt_project) | 로봇 측 코드 | Raspberry Pi (192.168.0.5) |
+| 🤖 [pinky_pro](https://github.com/pinklab-art/pinky_pro) | 원본 로봇 시스템 (PinkLab) | Reference |
 

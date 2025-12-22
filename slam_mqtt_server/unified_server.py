@@ -26,7 +26,7 @@ except ImportError:
     MQTT_OK = False
 
 from slam_mqtt_server.config import (
-    Path, Port, Net, Setting, ROS, MQTT as MQTT_TOPICS,
+    ROS, MQTT as MQTT_TOPICS, NET,
     Paths, FileSettings, Ports, NetworkDevices, Timeouts, MQTTSettings
 )
 
@@ -102,6 +102,41 @@ def health():
     return jsonify({'status': 'ok'}), 200
 
 
+@app.route('/download/<path:filename>')
+def download_file(filename):
+    """맵 파일 다운로드 (pgm, yaml, qr_positions.yaml)"""
+    from flask import send_from_directory
+    
+    # 맵 파일 디렉토리
+    map_folder = "/home/kim1/save/renewed_map"
+    qr_folder = "/home/kim1/nav2_maps"
+    
+    # qr_positions.yaml은 별도 폴더에서
+    if filename == 'qr_positions.yaml':
+        return send_from_directory(qr_folder, filename)
+    
+    # 맵 파일 (pgm, yaml)
+    filepath = os.path.join(map_folder, filename)
+    if os.path.exists(filepath):
+        return send_from_directory(map_folder, filename)
+    
+    return jsonify({'error': 'File not found'}), 404
+
+
+@app.route('/list_maps')
+def list_maps():
+    """사용 가능한 맵 목록"""
+    import glob
+    map_folder = "/home/kim1/save/renewed_map"
+    maps = []
+    for yaml_file in glob.glob(os.path.join(map_folder, "nav2_final_map_*.yaml")):
+        name = os.path.basename(yaml_file)
+        pgm_name = name.replace('.yaml', '.pgm')
+        if os.path.exists(os.path.join(map_folder, pgm_name)):
+            maps.append({'yaml': name, 'pgm': pgm_name})
+    return jsonify({'maps': sorted(maps, key=lambda x: x['yaml'], reverse=True)}), 200
+
+
 class UnifiedServerNode(Node):
     """통합 서버 노드"""
     
@@ -123,7 +158,6 @@ class UnifiedServerNode(Node):
         self.collision_saved_pub = self.create_publisher(String, ROS.COLLISION_PHOTO_SAVED, 10)
         self.create_subscription(Bool, ROS.SLAM_MODE, self._on_slam_mode, 10)
         # 로봇에서 오는 충돌 사진 토픽 구독
-        self.create_subscription(String, '/ros/collision/photo_ready', self._on_collision_photo, 10)
         self.create_subscription(String, ROS.COLLISION_PHOTO_READY, self._on_collision_photo, 10)
         
         # MQTT

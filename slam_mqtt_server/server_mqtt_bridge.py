@@ -253,6 +253,24 @@ class ServerMQTTBridge(Node):
             self.last_mode = mode
             self.slam_mode_pub.publish(Bool(data=(mode == "SLAM")))
             self._mqtt_pub(MQTT.SLAM_MODE, json.dumps({"mode": mode, "timestamp": time.time()}))
+            
+            # 모드별 명확한 출력
+            self.get_logger().info("")
+            self.get_logger().info("=" * 50)
+            if mode == "SLAM":
+                self.get_logger().info("🗺️  [SLAM 모드] 맵 생성 중...")
+                self.get_logger().info("   - 사이클 맵 수신 대기")
+                self.get_logger().info("   - 충돌 사진 수신 활성화")
+            elif mode == "NAV2":
+                self.get_logger().info("🚗 [NAV2 모드] 네비게이션 활성화")
+                self.get_logger().info("   - PLC 명령 대기 중")
+                self.get_logger().info("   - ArUco 마커 감지 활성화")
+                self._send_latest_map_to_robot()
+            else:
+                self.get_logger().info(f"⏸️  [IDLE 모드] 대기 중")
+            self.get_logger().info("=" * 50)
+            self.get_logger().info("")
+            
             self._launch_rviz(mode)
     
     def _on_nav_status(self, msg: String):
