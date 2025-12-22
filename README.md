@@ -153,6 +153,31 @@ ros2 topic pub /robot_mode std_msgs/msg/String "{data: 'IDLE'}" --once
 /home/kim1/ros2_ws/nav2_rviz.sh
 ```
 
+### 6. 🌐 웹 콘솔 (브라우저 기반)
+
+RViz 없이 브라우저에서 SLAM/Nav2를 제어할 수 있습니다:
+
+```bash
+# 웹 콘솔 실행 (기본 포트 8080)
+ros2 launch slam_mqtt_server web_console.launch.py
+
+# 포트 변경
+ros2 launch slam_mqtt_server web_console.launch.py port:=8088
+```
+
+**브라우저 접속:** `http://192.168.0.3:8080`
+
+**웹 콘솔 기능:**
+| 기능 | 설명 |
+|------|------|
+| 🗺️ 맵 시각화 | 실시간 Occupancy Grid 표시 |
+| 🤖 로봇 위치 | TF 기반 로봇 위치/방향 표시 |
+| 🎯 Goal 설정 | 클릭+드래그로 네비게이션 Goal 전송 |
+| 🛣️ 경로 표시 | Nav2 계획 경로 표시 |
+| 🔥 Costmap | Local/Global Costmap 오버레이 |
+| 💾 맵 저장 | SLAM Toolbox 맵 저장 |
+| 🔄 SLAM 리셋 | 맵 초기화 |
+
 ---
 
 ## 📦 노드 설명

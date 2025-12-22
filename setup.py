@@ -21,6 +21,9 @@ setup(
         # Config files
         (os.path.join('share', package_name, 'config'), 
             glob(os.path.join('config', '*'))),
+        # Web files
+        (os.path.join('share', package_name, 'scripts', 'web'), 
+            glob(os.path.join('scripts', 'web', '*'))),
     ],
     install_requires=[
         'setuptools',
@@ -44,6 +47,7 @@ setup(
             'nav2_map_builder = slam_mqtt_server.nav2_map_builder:main',
             'ai_vision_analyzer = slam_mqtt_server.ai_vision_analyzer:main',
             'web_rviz_bridge = slam_mqtt_server.web_rviz_bridge:main',
+            'nav2_web_server = slam_mqtt_server.nav2_web_server:main',
         ],
     },
 )

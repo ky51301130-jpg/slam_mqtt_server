@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SLAM MQTT - Web Console</title>
+    <style>
+        :root {
+            --primary: #3b82f6;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --bg: #0f172a;
+            --surface: #1e293b;
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 16px;
+        }
+        
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 20px;
+            background: var(--surface);
+            border-radius: 12px;
+            margin-bottom: 16px;
+        }
+        
+        header h1 {
+            font-size: 20px;
+            font-weight: 600;
+        }
+        
+        .logo {
+            height: 32px;
+        }
+        
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        .status-badge.connected {
+            background: rgba(34, 197, 94, 0.2);
+            color: var(--success);
+        }
+        
+        .status-badge.disconnected {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--danger);
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+        
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 300px;
+            gap: 16px;
+            height: calc(100vh - 100px);
+        }
+        
+        @media (max-width: 900px) {
+            .container {
+                grid-template-columns: 1fr;
+                height: auto;
+            }
+        }
+        
+        .map-container {
+            background: var(--surface);
+            border-radius: 12px;
+            padding: 16px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        #mapCanvas {
+            width: 100%;
+            height: 100%;
+            background: #000;
+            border-radius: 8px;
+            cursor: crosshair;
+        }
+        
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        
+        .card {
+            background: var(--surface);
+            border-radius: 12px;
+            padding: 16px;
+        }
+        
+        .card h3 {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .pose-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+        
+        .pose-item {
+            text-align: center;
+            padding: 12px;
+            background: rgba(59, 130, 246, 0.1);
+            border-radius: 8px;
+        }
+        
+        .pose-item label {
+            font-size: 10px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+        
+        .pose-item span {
+            display: block;
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--primary);
+            margin-top: 4px;
+        }
+        
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 12px 20px;
+            border-radius: 8px;
+            border: none;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            width: 100%;
+        }
+        
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #2563eb;
+        }
+        
+        .btn-warning {
+            background: var(--warning);
+            color: white;
+        }
+        
+        .btn-warning:hover {
+            background: #d97706;
+        }
+        
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+        
+        .btn-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .checkbox-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .checkbox-item input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: var(--primary);
+        }
+        
+        .checkbox-item label {
+            font-size: 14px;
+        }
+        
+        .footer {
+            margin-top: 16px;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+        
+        .footer a {
+            color: var(--primary);
+            text-decoration: none;
+        }
+        
+        .footer a:hover {
+            text-decoration: underline;
+        }
+        
+        .instructions {
+            font-size: 12px;
+            color: var(--text-muted);
+            line-height: 1.6;
+        }
+        
+        .instructions kbd {
+            display: inline-block;
+            padding: 2px 6px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 4px;
+            font-family: inherit;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🤖 SLAM MQTT - Web Console</h1>
+        <div id="status" class="status-badge disconnected">
+            <span class="status-dot"></span>
+            <span>Connecting...</span>
+        </div>
+    </header>
+    
+    <div class="container">
+        <div class="map-container">
+            <canvas id="mapCanvas"></canvas>
+        </div>
+        
+        <div class="sidebar">
+            <div class="card">
+                <h3>🚀 Robot Pose</h3>
+                <div class="pose-grid">
+                    <div class="pose-item">
+                        <label>X</label>
+                        <span id="poseX">--</span>
+                    </div>
+                    <div class="pose-item">
+                        <label>Y</label>
+                        <span id="poseY">--</span>
+                    </div>
+                    <div class="pose-item">
+                        <label>θ</label>
+                        <span id="poseYaw">--</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3>📍 Navigation</h3>
+                <p class="instructions">
+                    <kbd>클릭 + 드래그</kbd> 로 목표 설정<br>
+                    드래그 방향 = 로봇 방향
+                </p>
+            </div>
+            
+            <div class="card">
+                <h3>🗺️ SLAM 제어</h3>
+                <div class="btn-group">
+                    <button class="btn btn-primary" onclick="saveMap()">💾 맵 저장</button>
+                    <button class="btn btn-danger" onclick="resetSLAM()">🔄 SLAM 리셋</button>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3>👁️ 표시 옵션</h3>
+                <div class="checkbox-group">
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="showPath" checked />
+                        <label for="showPath">경로 표시</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="showLocalCostmap" />
+                        <label for="showLocalCostmap">Local Costmap</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="showGlobalCostmap" />
+                        <label for="showGlobalCostmap">Global Costmap</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="footer">
+        Based on <a href="https://github.com/pinklab-art/pinky_pro" target="_blank">PinkLab's pinky_pro</a> | 
+        <a href="https://github.com/ky51301130-jpg/slam_mqtt_server" target="_blank">slam_mqtt_server</a>
+    </div>
+
+<script>
+const canvas = document.getElementById("mapCanvas");
+const ctx = canvas.getContext("2d");
+
+let state = null;
+let scale = 1;
+let offsetX = 0, offsetY = 0;
+let isDragging = false;
+let dragStartX = 0, dragStartY = 0;
+let dragEndX = 0, dragEndY = 0;
+
+// Canvas 크기 조절
+function resizeCanvas() {
+    const container = canvas.parentElement;
+    canvas.width = container.clientWidth - 32;
+    canvas.height = container.clientHeight - 32;
+}
+window.addEventListener("resize", resizeCanvas);
+resizeCanvas();
+
+// API 호출
+async function fetchState() {
+    try {
+        const resp = await fetch("/api/state");
+        if (!resp.ok) throw new Error("API error");
+        state = await resp.json();
+        updateStatus(true);
+        updatePose();
+        draw();
+    } catch (e) {
+        updateStatus(false);
+    }
+}
+
+function updateStatus(connected) {
+    const el = document.getElementById("status");
+    if (connected) {
+        el.className = "status-badge connected";
+        el.innerHTML = '<span class="status-dot"></span><span>Connected</span>';
+    } else {
+        el.className = "status-badge disconnected";
+        el.innerHTML = '<span class="status-dot"></span><span>Disconnected</span>';
+    }
+}
+
+function updatePose() {
+    if (state && state.pose) {
+        document.getElementById("poseX").textContent = state.pose.x.toFixed(2);
+        document.getElementById("poseY").textContent = state.pose.y.toFixed(2);
+        document.getElementById("poseYaw").textContent = (state.pose.yaw * 180 / Math.PI).toFixed(1) + "°";
+    }
+}
+
+// 맵 좌표 → 캔버스 좌표
+function mapToCanvas(mx, my, map) {
+    const cx = (mx - map.origin.x) / map.resolution * scale + offsetX;
+    const cy = canvas.height - ((my - map.origin.y) / map.resolution * scale + offsetY);
+    return [cx, cy];
+}
+
+// 캔버스 좌표 → 맵 좌표
+function canvasToMap(cx, cy, map) {
+    const mx = (cx - offsetX) * map.resolution / scale + map.origin.x;
+    const my = ((canvas.height - cy) - offsetY) * map.resolution / scale + map.origin.y;
+    return [mx, my];
+}
+
+// 그리기
+function draw() {
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    if (!state || !state.map) return;
+    
+    const map = state.map;
+    
+    // 스케일 계산 (맵이 캔버스에 맞도록)
+    const scaleX = canvas.width / (map.width * map.resolution);
+    const scaleY = canvas.height / (map.height * map.resolution);
+    scale = Math.min(scaleX, scaleY) * 0.9;
+    
+    offsetX = (canvas.width - map.width * scale) / 2;
+    offsetY = (canvas.height - map.height * scale) / 2;
+    
+    // 맵 그리기
+    const imgData = ctx.createImageData(map.width, map.height);
+    for (let i = 0; i < map.data.length; i++) {
+        const v = map.data[i];
+        let r, g, b;
+        if (v === -1) {
+            r = g = b = 50;  // unknown
+        } else if (v === 0) {
+            r = g = b = 255; // free
+        } else {
+            r = g = b = 0;   // occupied
+        }
+        imgData.data[i * 4] = r;
+        imgData.data[i * 4 + 1] = g;
+        imgData.data[i * 4 + 2] = b;
+        imgData.data[i * 4 + 3] = 255;
+    }
+    
+    // 임시 캔버스에 맵 그리고 뒤집어서 메인 캔버스에 그리기
+    const tmpCanvas = document.createElement("canvas");
+    tmpCanvas.width = map.width;
+    tmpCanvas.height = map.height;
+    const tmpCtx = tmpCanvas.getContext("2d");
+    tmpCtx.putImageData(imgData, 0, 0);
+    
+    ctx.save();
+    ctx.translate(offsetX, canvas.height - offsetY);
+    ctx.scale(scale, -scale);
+    ctx.drawImage(tmpCanvas, 0, 0);
+    ctx.restore();
+    
+    // Global Costmap
+    if (document.getElementById("showGlobalCostmap").checked && state.global_costmap) {
+        drawCostmap(state.global_costmap, "rgba(0, 100, 255, 0.3)");
+    }
+    
+    // Local Costmap
+    if (document.getElementById("showLocalCostmap").checked && state.local_costmap) {
+        drawCostmap(state.local_costmap, "rgba(255, 165, 0, 0.5)");
+    }
+    
+    // Path
+    if (document.getElementById("showPath").checked && state.path && state.path.length > 1) {
+        ctx.strokeStyle = "#22c55e";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let i = 0; i < state.path.length; i++) {
+            const [cx, cy] = mapToCanvas(state.path[i].x, state.path[i].y, map);
+            if (i === 0) ctx.moveTo(cx, cy);
+            else ctx.lineTo(cx, cy);
+        }
+        ctx.stroke();
+    }
+    
+    // Robot pose
+    if (state.pose) {
+        const [cx, cy] = mapToCanvas(state.pose.x, state.pose.y, map);
+        const yaw = state.pose.yaw;
+        
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(-yaw);
+        
+        // 로봇 몸체
+        ctx.fillStyle = "#3b82f6";
+        ctx.beginPath();
+        ctx.arc(0, 0, 12, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // 방향 화살표
+        ctx.fillStyle = "#fff";
+        ctx.beginPath();
+        ctx.moveTo(15, 0);
+        ctx.lineTo(5, -5);
+        ctx.lineTo(5, 5);
+        ctx.closePath();
+        ctx.fill();
+        
+        ctx.restore();
+    }
+    
+    // 드래그 화살표 (goal 설정 중)
+    if (isDragging) {
+        const dx = dragEndX - dragStartX;
+        const dy = dragEndY - dragStartY;
+        const len = Math.sqrt(dx*dx + dy*dy);
+        
+        if (len > 10) {
+            ctx.strokeStyle = "#ef4444";
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(dragStartX, dragStartY);
+            ctx.lineTo(dragEndX, dragEndY);
+            ctx.stroke();
+            
+            // 화살표 머리
+            const angle = Math.atan2(dy, dx);
+            ctx.save();
+            ctx.translate(dragEndX, dragEndY);
+            ctx.rotate(angle);
+            ctx.fillStyle = "#ef4444";
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(-12, -6);
+            ctx.lineTo(-12, 6);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+        }
+    }
+}
+
+function drawCostmap(costmap, color) {
+    if (!state.map) return;
+    const map = state.map;
+    
+    for (let y = 0; y < costmap.height; y++) {
+        for (let x = 0; x < costmap.width; x++) {
+            const v = costmap.data[y * costmap.width + x];
+            if (v > 0) {
+                const mx = costmap.origin.x + x * costmap.resolution;
+                const my = costmap.origin.y + y * costmap.resolution;
+                const [cx, cy] = mapToCanvas(mx, my, map);
+                
+                const alpha = Math.min(v / 100, 1) * 0.6;
+                ctx.fillStyle = color.replace(/[\d.]+\)$/, alpha + ")");
+                ctx.fillRect(cx, cy - costmap.resolution * scale, 
+                           costmap.resolution * scale, costmap.resolution * scale);
+            }
+        }
+    }
+}
+
+// Goal 전송
+async function sendGoal(x, y, yaw) {
+    try {
+        const resp = await fetch("/api/goal", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ x, y, yaw })
+        });
+        const data = await resp.json();
+        if (data.success) {
+            console.log(`Goal sent: x=${x.toFixed(2)}, y=${y.toFixed(2)}, yaw=${(yaw*180/Math.PI).toFixed(1)}°`);
+        }
+    } catch (e) {
+        console.error("Goal 전송 실패", e);
+    }
+}
+
+// 마우스 이벤트
+canvas.addEventListener("mousedown", (e) => {
+    const rect = canvas.getBoundingClientRect();
+    dragStartX = e.clientX - rect.left;
+    dragStartY = e.clientY - rect.top;
+    dragEndX = dragStartX;
+    dragEndY = dragStartY;
+    isDragging = true;
+});
+
+canvas.addEventListener("mousemove", (e) => {
+    if (!isDragging) return;
+    const rect = canvas.getBoundingClientRect();
+    dragEndX = e.clientX - rect.left;
+    dragEndY = e.clientY - rect.top;
+    draw();
+});
+
+canvas.addEventListener("mouseup", (e) => {
+    if (!isDragging) return;
+    isDragging = false;
+    
+    if (!state || !state.map) return;
+    
+    const [mx, my] = canvasToMap(dragStartX, dragStartY, state.map);
+    const dx = dragEndX - dragStartX;
+    const dy = dragEndY - dragStartY;
+    const len = Math.sqrt(dx*dx + dy*dy);
+    
+    let yaw = 0;
+    if (len > 10) {
+        yaw = Math.atan2(-dy, dx);  // 캔버스 y 반전
+    }
+    
+    sendGoal(mx, my, yaw);
+    draw();
+});
+
+// SLAM 제어
+async function saveMap() {
+    const name = prompt("저장할 맵 이름:", "my_map_" + new Date().toISOString().slice(0,10));
+    if (!name) return;
+    
+    try {
+        const resp = await fetch("/api/slam/save_map", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name })
+        });
+        const data = await resp.json();
+        if (data.success) {
+            alert("맵 저장 요청 완료: " + data.name);
+        } else {
+            alert("맵 저장 실패");
+        }
+    } catch (e) {
+        alert("맵 저장 실패: " + e);
+    }
+}
+
+async function resetSLAM() {
+    if (!confirm("SLAM을 리셋하시겠습니까? 현재 맵이 초기화됩니다.")) return;
+    
+    try {
+        const resp = await fetch("/api/slam/reset", {
+            method: "POST"
+        });
+        const data = await resp.json();
+        if (data.success) {
+            alert("SLAM 리셋 완료");
+        } else {
+            alert("SLAM 리셋 실패");
+        }
+    } catch (e) {
+        alert("SLAM 리셋 실패: " + e);
+    }
+}
+
+// 체크박스 변경 시 다시 그리기
+document.getElementById("showPath").addEventListener("change", draw);
+document.getElementById("showLocalCostmap").addEventListener("change", draw);
+document.getElementById("showGlobalCostmap").addEventListener("change", draw);
+
+// 주기적 업데이트
+setInterval(fetchState, 200);
+fetchState();
+</script>
+</body>
+</html>
