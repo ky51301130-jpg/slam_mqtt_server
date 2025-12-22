@@ -1,0 +1,88 @@
+version: '3.8'
+
+# SLAM MQTT Server - 모니터링 스택
+# 사용법: docker-compose up -d
+# 중지: docker-compose down
+
+services:
+  # InfluxDB 2.x
+  influxdb:
+    image: influxdb:2.7
+    container_name: slam_influxdb
+    restart: unless-stopped
+    ports:
+      - "8086:8086"
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=adminpassword
+      - DOCKER_INFLUXDB_INIT_ORG=ky661
+      - DOCKER_INFLUXDB_INIT_BUCKET=ky661
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=slam_mqtt_token_2024
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+      - influxdb_config:/etc/influxdb2
+    networks:
+      - monitoring
+
+  # Telegraf (MQTT → InfluxDB)
+  telegraf:
+    image: telegraf:1.28
+    container_name: slam_telegraf
+    restart: unless-stopped
+    depends_on:
+      - influxdb
+    volumes:
+      - ./config/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+    network_mode: host  # MQTT 브로커 접근용
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Grafana
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: slam_grafana
+    restart: unless-stopped
+    depends_on:
+      - influxdb
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_INSTALL_PLUGINS=grafana-clock-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./config/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - monitoring
+
+  # Mosquitto MQTT Broker (optional - 이미 있으면 제거)
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: slam_mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./config/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    networks:
+      - monitoring
+
+volumes:
+  influxdb_data:
+  influxdb_config:
+  grafana_data:
+  mosquitto_data:
+  mosquitto_log:
+
+networks:
+  monitoring:
+    driver: bridge
