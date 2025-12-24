@@ -18,12 +18,21 @@ setup(
         # RViz configs
         (os.path.join('share', package_name, 'rviz'), 
             glob(os.path.join('rviz', '*.rviz'))),
-        # Config files
+        # Config files (only regular files, not directories)
         (os.path.join('share', package_name, 'config'), 
-            glob(os.path.join('config', '*'))),
+            [f for f in glob(os.path.join('config', '*')) if os.path.isfile(f)]),
+        # Config subdirectories
+        (os.path.join('share', package_name, 'config', 'mosquitto'), 
+            [f for f in glob(os.path.join('config', 'mosquitto', '*')) if os.path.isfile(f)]),
+        (os.path.join('share', package_name, 'config', 'grafana'), 
+            [f for f in glob(os.path.join('config', 'grafana', '*')) if os.path.isfile(f)]),
+        (os.path.join('share', package_name, 'config', 'grafana', 'dashboards'), 
+            [f for f in glob(os.path.join('config', 'grafana', 'dashboards', '*')) if os.path.isfile(f)]),
+        (os.path.join('share', package_name, 'config', 'grafana', 'provisioning'), 
+            [f for f in glob(os.path.join('config', 'grafana', 'provisioning', '*')) if os.path.isfile(f)]),
         # Web files
         (os.path.join('share', package_name, 'scripts', 'web'), 
-            glob(os.path.join('scripts', 'web', '*'))),
+            [f for f in glob(os.path.join('scripts', 'web', '*')) if os.path.isfile(f)]),
     ],
     install_requires=[
         'setuptools',
@@ -46,8 +55,7 @@ setup(
             'server_mqtt_bridge = slam_mqtt_server.server_mqtt_bridge:main',
             'nav2_map_builder = slam_mqtt_server.nav2_map_builder:main',
             'ai_vision_analyzer = slam_mqtt_server.ai_vision_analyzer:main',
-            'web_rviz_bridge = slam_mqtt_server.web_rviz_bridge:main',
-            'nav2_web_server = slam_mqtt_server.nav2_web_server:main',
+            'plc_simulator = slam_mqtt_server.plc_simulator:main',
         ],
     },
 )

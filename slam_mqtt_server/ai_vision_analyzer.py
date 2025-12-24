@@ -108,7 +108,7 @@ class AIVisionAnalyzer(Node):
     def _declare_params(self) -> dict:
         """파라미터 선언"""
         params = {
-            'robot_ip': '192.168.0.5', 'robot_port': 5000,
+            'robot_ip': '192.168.0.5', 'robot_port': 5200,
             'model_path': '/home/kim1/model/best.pt', 'confidence': 0.5,
             'analysis_fps': 1.0, 'mqtt_host': 'localhost', 'mqtt_port': 1883,
             'save_images': True, 'save_path': '/home/kim1/save/ai_detections',

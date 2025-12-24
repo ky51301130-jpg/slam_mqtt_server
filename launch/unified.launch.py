@@ -6,7 +6,6 @@
 사용법:
     ros2 launch slam_mqtt_server unified.launch.py
     ros2 launch slam_mqtt_server unified.launch.py ai:=false
-    ros2 launch slam_mqtt_server unified.launch.py foxglove:=false
 
 모드 전환:
     - 로봇에서 /robot_mode 토픽으로 "SLAM" 또는 "NAV2" 발행
@@ -29,14 +28,12 @@ def generate_launch_description():
     # Launch Arguments (단순화)
     # ─────────────────────────────────────────────────────────────
     ai_arg = DeclareLaunchArgument('ai', default_value='true', description='AI 비전 활성화')
-    foxglove_arg = DeclareLaunchArgument('foxglove', default_value='true', description='Foxglove 활성화')
     robot_ip_arg = DeclareLaunchArgument('robot_ip', default_value='192.168.0.5')
     model_arg = DeclareLaunchArgument('model', default_value='/home/kim1/model/best.pt')
     
     return LaunchDescription([
         # Arguments
         ai_arg,
-        foxglove_arg,
         robot_ip_arg,
         model_arg,
         
@@ -103,18 +100,4 @@ def generate_launch_description():
             condition=IfCondition(LaunchConfiguration('ai')),
         ),
         
-        # 5. Foxglove Bridge (웹 시각화)
-        Node(
-            package='foxglove_bridge',
-            executable='foxglove_bridge',
-            name='foxglove_bridge',
-            output='screen',
-            parameters=[{
-                'port': 8765,
-                'address': '0.0.0.0',
-                'tls': False,
-                'topic_whitelist': ['.*'],
-            }],
-            condition=IfCondition(LaunchConfiguration('foxglove')),
-        ),
     ])

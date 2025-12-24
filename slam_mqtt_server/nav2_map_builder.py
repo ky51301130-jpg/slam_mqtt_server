@@ -327,25 +327,45 @@ class Nav2MapBuilderWithAlignment(Node):
             wall_votes[aligned == self.PX_WALL] += 1
             free_votes[aligned == self.PX_FREE] += 1
             
-            # PORT 좌표 변환 (ICP 회전 적용)
+            # PORT 좌표 변환 (ICP 회전 + 중심점 이동 적용)
             if map_data.ports:
+                # 현재 맵의 벽 중심점 (픽셀 좌표)
+                curr_cx, curr_cy = self._get_wall_centroid(img)
+                
                 for port_name, port_data in map_data.ports.items():
                     px, py = port_data.get('x', 0), port_data.get('y', 0)
                     port_yaw = port_data.get('yaw', 0)
                     
-                    # 회전 변환 적용
+                    # 1. 월드 좌표 → 픽셀 좌표 (현재 맵 기준)
+                    px_pixel = (px - map_data.origin_x) / resolution
+                    py_pixel = (py - map_data.origin_y) / resolution
+                    
+                    # 2. 중심점 기준으로 이동
+                    dx = px_pixel - curr_cx
+                    dy = py_pixel - curr_cy
+                    
+                    # 3. ICP 회전 적용
                     rad = np.radians(angle)
                     cos_a, sin_a = np.cos(rad), np.sin(rad)
+                    rotated_dx = dx * cos_a - dy * sin_a
+                    rotated_dy = dx * sin_a + dy * cos_a
                     
-                    # origin 기준 → 픽셀 좌표 → 회전 → 새 origin 기준
-                    # 좌표 변환: 맵 origin + MARGIN offset
-                    new_x = (px - map_data.origin_x) * cos_a - (py - map_data.origin_y) * sin_a
-                    new_y = (px - map_data.origin_x) * sin_a + (py - map_data.origin_y) * cos_a
+                    # 4. 기준 맵(ref) 중심점으로 이동 + MARGIN 오프셋
+                    new_px_pixel = ref_cx + rotated_dx + self.MARGIN
+                    new_py_pixel = ref_cy + rotated_dy + self.MARGIN
+                    
+                    # 5. 픽셀 → 월드 좌표 (최종 맵 기준, origin은 나중에 계산됨)
+                    # 여기서는 ref 맵 origin 기준으로 저장
+                    new_x = new_px_pixel * resolution + ref.origin_x - self.MARGIN * resolution
+                    new_y = new_py_pixel * resolution + ref.origin_y - self.MARGIN * resolution
                     new_yaw = port_yaw + rad
                     
                     if port_name not in all_ports:
                         all_ports[port_name] = []
                     all_ports[port_name].append((new_x, new_y, new_yaw))
+                    
+                    if idx == 0:
+                        self.get_logger().info(f'   [맵 {idx+1}] {port_name}: ({px:.2f},{py:.2f}) → ({new_x:.2f},{new_y:.2f})')
         
         # 과반수 투표
         final = np.full((canvas_h, canvas_w), self.PX_UNKNOWN, dtype=np.uint8)
@@ -361,19 +381,26 @@ class Nav2MapBuilderWithAlignment(Node):
         origin_x = ref.origin_x - self.MARGIN * resolution
         origin_y = ref.origin_y - self.MARGIN * resolution
         
-        # PORT 좌표 평균 (모든 맵에서 감지된 것들)
+        # PORT 좌표 평균 (모든 맵에서 감지된 것들의 ICP 변환 후 평균)
         final_ports = {}
         for port_name, coords_list in all_ports.items():
             if coords_list:
-                avg_x = np.mean([c[0] for c in coords_list]) + origin_x
-                avg_y = np.mean([c[1] for c in coords_list]) + origin_y
+                avg_x = np.mean([c[0] for c in coords_list])
+                avg_y = np.mean([c[1] for c in coords_list])
                 avg_yaw = np.mean([c[2] for c in coords_list])
+                
+                # yaw 정규화 (-pi ~ pi)
+                while avg_yaw > np.pi:
+                    avg_yaw -= 2 * np.pi
+                while avg_yaw < -np.pi:
+                    avg_yaw += 2 * np.pi
+                
                 final_ports[port_name] = {
                     'x': round(float(avg_x), 3),
                     'y': round(float(avg_y), 3),
                     'yaw': round(float(avg_yaw), 3)
                 }
-                self.get_logger().info(f'📍 {port_name}: ({avg_x:.2f}, {avg_y:.2f}, yaw={avg_yaw:.2f})')
+                self.get_logger().info(f'📍 {port_name} 최종: ({avg_x:.3f}, {avg_y:.3f}, yaw={avg_yaw:.3f}) [{len(coords_list)}개 평균]')
         
         return final, origin_x, origin_y, final_ports
     
@@ -406,7 +433,46 @@ class Nav2MapBuilderWithAlignment(Node):
         with open(yaml_path, 'w') as f:
             pyyaml.dump(cfg, f, default_flow_style=False)
         
+        # qr_positions.yaml도 업데이트 (Nav2에서 사용)
+        if ports:
+            self._update_qr_positions(ports)
+        
         return ts
+    
+    def _update_qr_positions(self, ports: dict):
+        """qr_positions.yaml 파일 업데이트"""
+        qr_path = "/home/kim1/nav2_maps/qr_positions.yaml"
+        os.makedirs(os.path.dirname(qr_path), exist_ok=True)
+        
+        # ArUco ID 매핑
+        aruco_ids = {'PORT_A': 0, 'PORT_B': 1, 'HOME': 2}
+        
+        qr_data = {}
+        for port_name, port_info in ports.items():
+            x = float(port_info.get('x', 0))
+            y = float(port_info.get('y', 0))
+            yaw = float(port_info.get('yaw', 0))
+            
+            # yaw → quaternion (z축 회전)
+            qw = float(np.cos(yaw / 2))
+            qz = float(np.sin(yaw / 2))
+            
+            qr_data[port_name] = {
+                'aruco_id': aruco_ids.get(port_name, -1),
+                'position': {'x': round(x, 4), 'y': round(y, 4), 'z': 0.0},
+                'orientation': {'x': 0.0, 'y': 0.0, 'z': round(qz, 4), 'w': round(qw, 4)}
+            }
+        
+        # HOME이 없으면 PORT_A와 동일하게
+        if 'HOME' not in qr_data and 'PORT_A' in qr_data:
+            import copy
+            qr_data['HOME'] = copy.deepcopy(qr_data['PORT_A'])
+            qr_data['HOME']['aruco_id'] = 2
+        
+        with open(qr_path, 'w') as f:
+            pyyaml.dump(qr_data, f, default_flow_style=False)
+        
+        self.get_logger().info(f'✅ qr_positions.yaml 업데이트: {list(qr_data.keys())}')
     
     def _to_occupancy_grid(self, img: np.ndarray, resolution: float,
                            origin_x: float, origin_y: float, 

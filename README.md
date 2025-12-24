@@ -291,6 +291,37 @@ SLAM 맵 8장을 ICP 정렬 + 과반수 투표로 병합:
 ros2 launch slam_mqtt_server unified.launch.py yolo_model:=/path/to/best.pt
 ```
 
+### 5. `plc_simulator` - PLC 테스트 도구
+
+실제 PLC 없이 네비게이션 테스트를 위한 시뮬레이터:
+
+```bash
+# PLC 테스트 실행 (3분마다 A/B 포트 번갈아 신호 발행)
+python3 ~/ros2_ws/plc_test.py
+
+# 또는 ros2 run
+ros2 run slam_mqtt_server plc_simulator
+```
+
+**동작:**
+1. PORT A 신호 발행 (`/plc/location` → `"A"`)
+2. 도착 신호 대기 (`robot/arrived` 또는 `robot/nav_result`)
+3. 도착하면 → PORT B 신호 발행
+4. 3분 타임아웃 시 자동으로 다음 포트로 전환
+5. A → B → A → B... 무한 반복
+
+**수동 PLC 신호 발행:**
+```bash
+# PORT A로 이동
+mosquitto_pub -h localhost -t '/plc/location' -m 'A'
+
+# PORT B로 이동
+mosquitto_pub -h localhost -t '/plc/location' -m 'B'
+
+# 좌표로 이동
+mosquitto_pub -h localhost -t 'plc/goal' -m '{"x": 1.5, "y": 2.0, "theta": 0.0}'
+```
+
 ---
 
 ## 🌐 네트워크 구성

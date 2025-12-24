@@ -102,6 +102,228 @@ def health():
     return jsonify({'status': 'ok'}), 200
 
 
+@app.route('/status')
+def server_status():
+    """서버 전체 상태 API"""
+    import glob
+    
+    # 맵 정보
+    map_folder = "/home/kim1/save/renewed_map"
+    raw_folder = "/home/kim1/save/map"
+    today = datetime.now().strftime('%Y%m%d')
+    
+    nav2_maps = sorted(glob.glob(os.path.join(map_folder, "nav2_final_map_*.yaml")), reverse=True)
+    today_raw_maps = glob.glob(os.path.join(raw_folder, f"map_{today}*.pgm"))
+    
+    latest_map = None
+    if nav2_maps:
+        latest = nav2_maps[0]
+        import yaml
+        with open(latest, 'r') as f:
+            cfg = yaml.safe_load(f)
+        latest_map = {
+            'name': os.path.basename(latest),
+            'ports': cfg.get('ports', {}),
+            'resolution': cfg.get('resolution', 0.05)
+        }
+    
+    # PLC/MCU 상태
+    plc_online = False
+    plc_port_a = 'offline'
+    plc_port_b = 'offline'
+    if _ros_node:
+        now = time.time()
+        plc_online = _ros_node.plc_last_seen and (now - _ros_node.plc_last_seen < 30)
+        plc_port_a = _ros_node.plc_port_a
+        plc_port_b = _ros_node.plc_port_b
+    
+    # qr_positions 로드
+    qr_positions = {}
+    qr_path = "/home/kim1/nav2_maps/qr_positions.yaml"
+    if os.path.exists(qr_path):
+        import yaml
+        with open(qr_path, 'r') as f:
+            qr_positions = yaml.safe_load(f) or {}
+    
+    return jsonify({
+        'server': 'online',
+        'timestamp': datetime.now().isoformat(),
+        'maps': {
+            'nav2_count': len(nav2_maps),
+            'today_raw_count': len(today_raw_maps),
+            'latest': latest_map
+        },
+        'ports': qr_positions,
+        'plc': {
+            'online': plc_online,
+            'port_a': plc_port_a,
+            'port_b': plc_port_b
+        },
+        'links': {
+            'web_ui': 'http://192.168.0.3:8080',
+            'grafana': 'http://192.168.0.3:3000',
+            'upload': 'http://192.168.0.3:5100'
+        }
+    }), 200
+
+
+@app.route('/')
+def dashboard():
+    """서버 대시보드 UI"""
+    html = '''<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PINKY 서버 대시보드</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; min-height: 100vh; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; text-align: center; }
+        .header h1 { font-size: 2em; margin-bottom: 5px; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+        .card { background: #16213e; border-radius: 12px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        .card h3 { color: #667eea; margin-bottom: 15px; display: flex; align-items: center; gap: 10px; }
+        .status-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+        .online { background: #00ff88; box-shadow: 0 0 10px #00ff88; }
+        .offline { background: #ff4757; box-shadow: 0 0 10px #ff4757; }
+        .info-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #2a3f5f; }
+        .info-row:last-child { border-bottom: none; }
+        .info-label { color: #888; }
+        .info-value { color: #fff; font-weight: 500; }
+        .port-card { background: #1e3a5f; padding: 15px; border-radius: 8px; margin: 10px 0; }
+        .port-name { font-size: 1.2em; color: #00d4ff; margin-bottom: 8px; }
+        .port-coords { font-family: monospace; color: #aaa; font-size: 0.9em; }
+        .link-btn { display: inline-block; background: #667eea; color: white; padding: 10px 20px; 
+                    border-radius: 8px; text-decoration: none; margin: 5px; transition: transform 0.2s; }
+        .link-btn:hover { transform: scale(1.05); background: #764ba2; }
+        .links { text-align: center; margin-top: 20px; }
+        .refresh-btn { position: fixed; bottom: 20px; right: 20px; background: #667eea; color: white;
+                       border: none; padding: 15px 25px; border-radius: 30px; cursor: pointer; font-size: 1em; }
+        .timestamp { text-align: center; color: #666; margin-top: 20px; font-size: 0.9em; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🤖 PINKY 서버 대시보드</h1>
+        <p>실시간 시스템 상태</p>
+    </div>
+    <div class="container">
+        <div class="grid">
+            <div class="card">
+                <h3>📡 서버 상태</h3>
+                <div id="server-status">로딩 중...</div>
+            </div>
+            <div class="card">
+                <h3>🗺️ 맵 정보</h3>
+                <div id="map-status">로딩 중...</div>
+            </div>
+            <div class="card">
+                <h3>📍 포트 좌표</h3>
+                <div id="port-status">로딩 중...</div>
+            </div>
+            <div class="card">
+                <h3>🔌 PLC 상태</h3>
+                <div id="plc-status">로딩 중...</div>
+            </div>
+        </div>
+        <div class="links">
+            <a href="http://192.168.0.3:8080" target="_blank" class="link-btn">🌐 Web UI</a>
+            <a href="http://192.168.0.3:3000" target="_blank" class="link-btn">📊 Grafana</a>
+            <a href="/list_maps" target="_blank" class="link-btn">📂 맵 목록</a>
+            <a href="/api/detection_images" target="_blank" class="link-btn">🔍 AI 감지</a>
+        </div>
+        <div class="timestamp" id="timestamp"></div>
+    </div>
+    <button class="refresh-btn" onclick="loadStatus()">🔄 새로고침</button>
+    <script>
+        async function loadStatus() {
+            try {
+                const res = await fetch('/status');
+                const data = await res.json();
+                
+                // 서버 상태
+                document.getElementById('server-status').innerHTML = `
+                    <div class="info-row">
+                        <span class="info-label">상태</span>
+                        <span class="info-value"><span class="status-dot online"></span> 온라인</span>
+                    </div>
+                `;
+                
+                // 맵 상태
+                const maps = data.maps;
+                let mapHtml = `
+                    <div class="info-row">
+                        <span class="info-label">Nav2 맵</span>
+                        <span class="info-value">${maps.nav2_count}개</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">오늘 사이클</span>
+                        <span class="info-value">${maps.today_raw_count}개</span>
+                    </div>
+                `;
+                if (maps.latest) {
+                    mapHtml += `
+                        <div class="info-row">
+                            <span class="info-label">최신 맵</span>
+                            <span class="info-value" style="font-size:0.8em">${maps.latest.name}</span>
+                        </div>
+                    `;
+                }
+                document.getElementById('map-status').innerHTML = mapHtml;
+                
+                // 포트 좌표
+                const ports = data.ports;
+                let portHtml = '';
+                for (const [name, info] of Object.entries(ports)) {
+                    const pos = info.position || {};
+                    const ori = info.orientation || {};
+                    portHtml += `
+                        <div class="port-card">
+                            <div class="port-name">${name} (ID: ${info.aruco_id})</div>
+                            <div class="port-coords">
+                                위치: (${pos.x?.toFixed(3) || 0}, ${pos.y?.toFixed(3) || 0})<br>
+                                방향: w=${ori.w?.toFixed(3) || 1}, z=${ori.z?.toFixed(3) || 0}
+                            </div>
+                        </div>
+                    `;
+                }
+                document.getElementById('port-status').innerHTML = portHtml || '<p style="color:#888">포트 정보 없음</p>';
+                
+                // PLC 상태
+                const plc = data.plc;
+                document.getElementById('plc-status').innerHTML = `
+                    <div class="info-row">
+                        <span class="info-label">연결</span>
+                        <span class="info-value">
+                            <span class="status-dot ${plc.online ? 'online' : 'offline'}"></span>
+                            ${plc.online ? '온라인' : '오프라인'}
+                        </span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">PORT A</span>
+                        <span class="info-value">${plc.port_a}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">PORT B</span>
+                        <span class="info-value">${plc.port_b}</span>
+                    </div>
+                `;
+                
+                document.getElementById('timestamp').textContent = '마지막 업데이트: ' + data.timestamp;
+            } catch (e) {
+                console.error(e);
+            }
+        }
+        loadStatus();
+        setInterval(loadStatus, 5000);
+    </script>
+</body>
+</html>'''
+    return html
+
+
 @app.route('/download/<path:filename>')
 def download_file(filename):
     """맵 파일 다운로드 (pgm, yaml, qr_positions.yaml)"""
@@ -137,6 +359,99 @@ def list_maps():
     return jsonify({'maps': sorted(maps, key=lambda x: x['yaml'], reverse=True)}), 200
 
 
+# ============================================================================
+# Grafana 대시보드용 API 엔드포인트들
+# ============================================================================
+
+@app.route('/api/latest_aruco')
+def latest_aruco():
+    """가장 최근 ArUco 마커 인식 이미지"""
+    import glob
+    from flask import send_from_directory
+    aruco_folder = "/home/kim1/save/ai_detections/aruco"
+    files = sorted(glob.glob(os.path.join(aruco_folder, "*.jpg")), key=os.path.getmtime, reverse=True)
+    if files:
+        filename = os.path.basename(files[0])
+        return send_from_directory(aruco_folder, filename)
+    return jsonify({'error': 'No ArUco images found'}), 404
+
+
+@app.route('/api/latest_obstacle')
+def latest_obstacle():
+    """가장 최근 YOLO 장애물 인식 이미지"""
+    import glob
+    from flask import send_from_directory
+    # nav2_obstacles 먼저, 없으면 obstacles
+    folders = ["/home/kim1/save/ai_detections/nav2_obstacles", "/home/kim1/save/ai_detections/obstacles"]
+    for folder in folders:
+        files = sorted(glob.glob(os.path.join(folder, "*.jpg")), key=os.path.getmtime, reverse=True)
+        if files:
+            filename = os.path.basename(files[0])
+            return send_from_directory(folder, filename)
+    return jsonify({'error': 'No obstacle images found'}), 404
+
+
+@app.route('/api/detection_images')
+def detection_images():
+    """최근 인식 이미지 정보 (JSON)"""
+    import glob
+    aruco_folder = "/home/kim1/save/ai_detections/aruco"
+    obstacle_folders = ["/home/kim1/save/ai_detections/nav2_obstacles", "/home/kim1/save/ai_detections/obstacles"]
+    
+    result = {'aruco': None, 'obstacle': None}
+    
+    # ArUco
+    aruco_files = sorted(glob.glob(os.path.join(aruco_folder, "*.jpg")), key=os.path.getmtime, reverse=True)
+    if aruco_files:
+        f = aruco_files[0]
+        result['aruco'] = {
+            'filename': os.path.basename(f),
+            'url': f"http://192.168.0.3:5100/api/latest_aruco",
+            'timestamp': os.path.getmtime(f),
+            'count': len(aruco_files)
+        }
+    
+    # Obstacle
+    for folder in obstacle_folders:
+        files = sorted(glob.glob(os.path.join(folder, "*.jpg")), key=os.path.getmtime, reverse=True)
+        if files:
+            f = files[0]
+            result['obstacle'] = {
+                'filename': os.path.basename(f),
+                'url': f"http://192.168.0.3:5100/api/latest_obstacle",
+                'timestamp': os.path.getmtime(f),
+                'count': len(files)
+            }
+            break
+    
+    return jsonify(result), 200
+
+
+@app.route('/api/plc_status')
+def plc_status():
+    """PLC 포트 상태"""
+    if _ros_node:
+        now = time.time()
+        plc_online = _ros_node.plc_last_seen and (now - _ros_node.plc_last_seen < 30)
+        return jsonify({
+            'online': plc_online,
+            'last_seen': _ros_node.plc_last_seen,
+            'port_a': _ros_node.plc_port_a,
+            'port_b': _ros_node.plc_port_b
+        }), 200
+    return jsonify({'online': False}), 200
+
+
+@app.route('/api/dashboard_links')
+def dashboard_links():
+    """대시보드 링크 모음"""
+    return jsonify({
+        'web_rviz': 'http://192.168.0.3:8080',
+        'grafana': 'http://192.168.0.3:3000',
+        'upload_server': 'http://192.168.0.3:5100'
+    }), 200
+
+
 class UnifiedServerNode(Node):
     """통합 서버 노드"""
     
@@ -152,6 +467,8 @@ class UnifiedServerNode(Node):
         self.collision_count = 0
         self.plc_last_seen = 0.0
         self.mcu_last_seen = 0.0
+        self.plc_port_a = 'offline'
+        self.plc_port_b = 'offline'
         
         # ROS2 Publishers/Subscribers
         self.map_cycle_pub = self.create_publisher(String, ROS.MAP_SAVER_CYCLE, 10)
@@ -201,6 +518,19 @@ class UnifiedServerNode(Node):
     def _mqtt_on_message(self, client, userdata, msg):
         if msg.topic.startswith('/plc/'):
             self.plc_last_seen = time.time()
+            # PLC 포트 상태 파싱
+            try:
+                payload = json.loads(msg.payload.decode())
+                if 'port_a' in payload:
+                    self.plc_port_a = payload['port_a']
+                if 'port_b' in payload:
+                    self.plc_port_b = payload['port_b']
+                if msg.topic == '/plc/port_a':
+                    self.plc_port_a = payload.get('status', 'unknown')
+                elif msg.topic == '/plc/port_b':
+                    self.plc_port_b = payload.get('status', 'unknown')
+            except:
+                pass
         elif msg.topic.startswith('/mcu/'):
             self.mcu_last_seen = time.time()
         elif msg.topic == MQTT_TOPICS.COLLISION_PHOTO and self.slam_mode:
